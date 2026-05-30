@@ -1,6 +1,7 @@
 # ignore the generated artifacts
 pvtr-github-repo
 github-repo
+badge-url
 evaluation_results
 
 # ignore any local dev config file

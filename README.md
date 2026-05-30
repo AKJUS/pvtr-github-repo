@@ -42,6 +42,11 @@ docker run \
 
 See the [OSPS Security Baseline Scanner](https://github.com/marketplace/actions/open-source-project-security-baseline-scanner)
 
+## Best Practices Badge Integration
+
+To use scan results with the OpenSSF Best Practices Badge, see the user guide in
+[docs/best-practices-badge.md](docs/best-practices-badge.md).
+
 ## Contributing
 
 Contributions are welcome! Please see our [Contributing Guidelines](.github/CONTRIBUTING.md) for more information.
