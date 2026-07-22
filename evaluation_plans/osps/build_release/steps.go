@@ -624,11 +624,33 @@ func DistributionPointsUseHTTPS(payload data.Payload) (result gemara.Result, mes
 }
 
 func SecretScanningInUse(payload data.Payload) (result gemara.Result, message string, confidence gemara.ConfidenceLevel) {
-	if payload.SecurityPosture.PreventsPushingSecrets() && payload.SecurityPosture.ScansForSecrets() {
-		return gemara.Passed, "Secret scanning is enabled and prevents pushing secrets", confidence
-	} else if payload.SecurityPosture.PreventsPushingSecrets() || payload.SecurityPosture.ScansForSecrets() {
-		return gemara.Failed, "Secret scanning is only partially enabled", confidence
-	} else {
-		return gemara.Failed, "Secret scanning is not enabled", confidence
+	sp := payload.SecurityPosture
+
+	// Strongest evidence: GitHub itself reports both native controls enabled.
+	if sp.ScansForSecrets() && sp.PreventsPushingSecrets() {
+		return gemara.Passed, "GitHub secret scanning and push protection are both enabled", gemara.High
 	}
+
+	// A Security Insights self-declaration counts even when GitHub's native
+	// settings are off or unreadable (the project may use third-party tooling),
+	// but it is self-reported, so lower confidence than an observed setting.
+	if sp.InsightsDeclaresSecretScanning() {
+		return gemara.Passed, "Security Insights declares secret-scanning tooling", gemara.Medium
+	}
+
+	// Partial native coverage: name the control that is missing.
+	if sp.ScansForSecrets() {
+		return gemara.Failed, "GitHub secret scanning is enabled, but push protection is not", gemara.Medium
+	}
+	if sp.PreventsPushingSecrets() {
+		return gemara.Failed, "GitHub push protection is enabled, but secret scanning is not", gemara.Medium
+	}
+
+	// Nothing enabled and nothing declared. Distinguish "we could not read it"
+	// from "it is off": GitHub returns security_and_analysis only to repository
+	// admins, so an unreadable status is unknown rather than a failure.
+	if !sp.SecretScanningObservable() {
+		return gemara.NeedsReview, "Secret scanning status is not observable with the current token; reading it requires repository admin access, and no Security Insights declaration was found", gemara.Low
+	}
+	return gemara.Failed, "GitHub reports secret scanning and push protection are both disabled", gemara.Medium
 }
