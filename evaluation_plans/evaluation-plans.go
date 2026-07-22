@@ -62,7 +62,7 @@ var (
 		},
 		"OSPS-BR-06.01": {
 			reusable_steps.HasSecurityInsightsFile,
-			build_release.InsightsHasSlsaAttestation,
+			build_release.ReleasesAreSignedOrAttested,
 		},
 		"OSPS-BR-07.01": {
 			build_release.SecretScanningInUse,
