@@ -105,7 +105,6 @@ var (
 			docs.HasDependencyManagementPolicy,
 		},
 		"OSPS-GV-01.01": {
-			reusable_steps.HasSecurityInsightsFile,
 			reusable_steps.IsActive,
 			governance.CoreTeamIsListed,
 			governance.ProjectAdminsListed,
