@@ -576,8 +576,59 @@ func TestGetWorkflowPermissionsInaccessibleLeavesUnobserved(t *testing.T) {
 		repo:       "test-repo",
 		HttpClient: server.Client(),
 	}
-	require.Error(t, rest.getWorkflowPermissions())
+	require.NoError(t, rest.getWorkflowPermissions(), "a 403 from the admin-only permissions endpoints is an expected absence, not a setup failure")
 	assert.False(t, rest.WorkflowPermissionsObserved, "insufficient token permissions must leave the observed flag false so the workflow-file heuristic applies")
+}
+
+// TestSetupPropagatesDomainErrors locks in the behavior #42 exists to add:
+// a real (non-expected-absence) failure in one data domain must surface in
+// Setup's returned error, named by domain, without being swallowed and
+// without stopping the other domains from completing successfully.
+func TestSetupPropagatesDomainErrors(t *testing.T) {
+	oldAPIBase := APIBase
+	defer func() { APIBase = oldAPIBase }()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/test-owner/test-repo/actions/permissions":
+			// The domain this test injects a real failure into.
+			http.Error(w, `{"message": "internal error"}`, http.StatusInternalServerError)
+		case "/repos/test-owner/test-repo/private-vulnerability-reporting":
+			// Expected absence: must not appear in the joined error.
+			http.Error(w, `{"message": "Not Found"}`, http.StatusNotFound)
+		case "/repos/test-owner/test-repo/releases":
+			_, _ = w.Write([]byte(`[]`))
+		case "/repos/test-owner/test-repo/security-advisories":
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.Error(w, `{"message": "Not Found"}`, http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	APIBase = server.URL
+
+	mockClient := mock.NewMockedHTTPClient(
+		mock.WithRequestMatch(mock.GetReposContentsByOwnerByRepoByPath, []*github.RepositoryContent{}),
+	)
+	ghClient := github.NewClient(mockClient)
+
+	rest := &RestData{
+		owner:      "test-owner",
+		repo:       "test-repo",
+		ghClient:   ghClient,
+		HttpClient: server.Client(),
+		Config:     &config.Config{Logger: hclog.NewNullLogger()},
+	}
+
+	err := rest.Setup()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "workflow permissions", "the joined error must name the domain that actually failed")
+	assert.NotContains(t, err.Error(), "private vulnerability reporting", "an expected absence (404) must not be reported as a failure")
+	assert.NotContains(t, err.Error(), "releases", "a domain that succeeded must not appear in the joined error")
+	assert.NotContains(t, err.Error(), "security advisories", "a domain that succeeded must not appear in the joined error")
+	assert.False(t, rest.WorkflowPermissionsObserved, "the failed domain must leave its data unobserved")
+	assert.False(t, rest.PrivateVulnReporting.Known, "an expected absence still leaves Known false")
+	assert.NoError(t, rest.ReleasesError, "a domain that succeeded must not carry an error")
 }
 
 func TestLicenseAtRef(t *testing.T) {
