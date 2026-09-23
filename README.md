@@ -52,6 +52,99 @@ docker run \
 
 See the [OSPS Security Baseline Scanner](https://github.com/marketplace/actions/open-source-project-security-baseline-scanner)
 
+## Optional AI Review of Security Insights Evidence
+
+When an AI provider is configured, four security-assessment checks can review
+the contents of evidence explicitly linked by Security Insights:
+
+| Requirement | Security Insights evidence selected |
+| --- | --- |
+| OSPS-SA-01.01: design documentation | Project documentation's detailed guide |
+| OSPS-SA-02.01: external interfaces | Project documentation's detailed and quickstart guides |
+| OSPS-SA-03.01: security assessment | Repository security posture's self and third-party assessment evidence |
+| OSPS-SA-03.02: threat modeling | Repository security posture's self and third-party assessment evidence |
+
+This is document review, not repository-wide discovery or an independent
+verification of the released software. Only HTTPS `github.com/.../blob/...`
+and `raw.githubusercontent.com/...` file links in the repository being
+assessed are supported. Each link's ref is used rather than silently reading
+the default branch; a fully-qualified `refs/heads/<branch>` or
+`refs/tags/<tag>` ref (as GitHub's "Raw" button now emits) is accepted, and any
+other slash-containing ref must encode the slash as `%2F`. A slash inside a
+fully-qualified branch or tag name must likewise be encoded, as in
+`refs/heads/release%2Fv2/CHANGELOG.md`; an unencoded
+`refs/heads/release/v2/CHANGELOG.md` is read as branch `release` and path
+`v2/CHANGELOG.md`.
+Query strings, credentials in URLs, and redirects are not supported. URL
+fragments select no smaller scope: the entire declared file is reviewed.
+Supported text formats are Markdown, AsciiDoc, reStructuredText,
+plain text, JSON, YAML, and Protocol Buffers. Links within an artifact are not
+followed.
+
+- Without AI configuration, no additional evidence is fetched and deterministic
+  evaluation is used. With no relevant Security Insights declaration, it is also
+  used unchanged; the scanner does not search for alternative AI evidence, and a
+  misconfigured provider cannot change the verdict for such a repository.
+- Enabling AI never produces a worse verdict than the AI-disabled path. When
+  declared evidence cannot be gathered - an unsupported URL host or format
+  (including PDFs), a retrieval error, an unparseable Security Insights file, or
+  evidence exceeding 16 distinct URLs or the 64 KiB JSON packet budget - the
+  deterministic verdict is preserved rather than demoted. A comment-only or
+  name-only assessment is not a gradeable declaration; a comment that denies an
+  assessment was performed keeps the deterministic Failed.
+- AI provider and response-validation failures return **NeedsReview** with low
+  confidence and a message describing the deferral unless the deterministic
+  verdict was **Passed**, in which case the deterministic verdict is preserved.
+  AI-client construction failure follows the same rule when there is declared
+  evidence to grade.
+- A successful AI response can resolve a deterministic **NeedsReview** into a
+  Passed or Failed verdict, but it cannot lower a deterministic **Passed**: the
+  result is clamped to the AI-disabled verdict after model analysis, and the
+  model's analysis is recorded as advisory evidence without changing the grade.
+  Design passes are otherwise capped at medium confidence: documentary coverage
+  is not proof that every released component was documented. AI NeedsReview
+  verdicts use low confidence, even when the model reports high confidence in its
+  deferral.
+- For OSPS-SA-02.01, an AI pass recommendation returns **NeedsReview** with low
+  confidence and an explicit request for human confirmation unless that would
+  lower a deterministic **Passed**. Live tests showed inconsistent acceptance of
+  insufficient interface documentation.
+  The original model verdict, explanation, and citations remain in the AI
+  evidence for review; they are recommendations, not the final scanner result.
+  AI Failed and NeedsReview responses keep their normal result handling.
+  This rule does not change the AI-disabled deterministic path.
+
+The design check also now applies the release gate already used by the other
+three checks. Release detection currently uses GitHub Releases, not tags alone
+or releases distributed elsewhere.
+
+Declared document contents are sent to the configured AI provider. Use this
+option only when that provider is approved to process the repository's data.
+AI judgments remain subject to error and require human review where assurance
+or compliance decisions depend on them.
+
+### Opt-in live prompt regression tests
+
+The normal Go test suite does not call an AI provider. To replay captured
+SI-declared evidence through an approved provider, set `PVTR_SA_LIVE_FIXTURE`,
+`PVTR_SA_LIVE_MODEL`, `PVTR_SA_LIVE_BASE_URL`, and `PVTR_SA_LIVE_API_KEY`, then run:
+
+```sh
+go test ./evaluation_plans/osps/sec_assessment \
+  -run '^TestSecurityAssessmentDeclaredEvidenceLive$' -count=1 -v
+```
+
+The fixture is a JSON array of cases with `name`, `behavior`, `material`, and
+`want_result` fields. `material` is the captured evidence object supplied to
+the model; `want_result` is the human-reviewed expected Gemara result, such as
+`Needs Review` or `Passed`. Preserve the original SI declarations and document
+source URLs when preparing fixtures. Set `PVTR_SA_LIVE_OUTPUT` to retain the
+AI evidence for review; it includes the supplied document contents.
+
+This isolates prompt and verdict handling from repository retrieval. It is
+not a replacement for full scanner end-to-end tests, and passing a finite
+set of cases does not guarantee model accuracy on other evidence.
+
 ## Best Practices Badge Integration
 
 To use scan results with the OpenSSF Best Practices Badge, see the user guide in
